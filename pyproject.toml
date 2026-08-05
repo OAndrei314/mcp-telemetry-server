@@ -1,0 +1,10 @@
+[project]
+name = "mcp-telemetry-server"
+version = "0.1.0"
+description = "MCP server exposing synthetic optical-module telemetry query/anomaly tools."
+requires-python = ">=3.10"
+license = { text = "MIT" }
+dependencies = ["mcp>=2.0.0,<2.1.0", "numpy>=1.26"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
