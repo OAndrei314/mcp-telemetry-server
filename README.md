@@ -26,9 +26,13 @@ alarm.
   with the window mean/std it was compared against, so it's auditable, not a black box.
 - `telemetry_server/health.py` — aggregates per-metric anomaly flags into one module health
   status (`healthy` / `degraded` / `critical`).
-- `telemetry_server/server.py` — wires all of the above into 5 MCP tools (`list_modules`,
-  `get_telemetry`, `detect_anomalies`, `get_module_health_summary`, `list_metrics`) using
-  the MCP Python SDK's `MCPServer` (SDK 2.0 — the API package that superseded `FastMCP`).
+- `telemetry_server/correlation.py` — adds recent multi-metric trend analysis and ranks
+  transparent root-cause hypotheses such as thermal/bias coupling or optical-power
+  degradation.
+- `telemetry_server/server.py` — wires all of the above into 6 MCP tools (`list_modules`,
+  `get_telemetry`, `detect_anomalies`, `get_module_health_summary`,
+  `explain_module_health`, `list_metrics`) using the MCP Python SDK's `MCPServer`
+  (SDK 2.0 — the API package that superseded `FastMCP`).
 
 ## Quickstart
 
@@ -69,13 +73,25 @@ flagged, below the persistence bar) while spuriously flagging the uninjected
 `wavelength_nm` stream (2 points) — the module-level verdict happens to net out correctly
 here, but that's not a guarantee.
 
+## Explanation Layer
+
+`explain_module_health` goes beyond independent point anomalies. It computes recent slopes
+for each metric, then ranks simple hypotheses from correlated directions:
+
+- thermal/bias co-drift -> check the thermal sweep and bias-compensation loop;
+- optical-power drop without heating -> inspect connector cleanliness, receiver margin,
+  and laser-aging telemetry;
+- wavelength movement -> check wavelength-locker and thermal-control stability;
+- no correlated drift -> treat isolated flags as likely measurement noise.
+
+The layer is deliberately transparent: the returned payload includes recent per-metric
+slopes, trend directions, evidence strings, confidence scores, and the recommended next
+validation check.
+
 ## Status / next steps
 
-The honest fix for the attribution problem above is multi-metric correlation (e.g. "are
-temperature and bias current drifting *together*, in the same direction?" is a much
-stronger signal than either alone) rather than independent per-metric thresholds — a
-natural next step, along with exposing the health-check window/threshold as MCP tool
-parameters instead of fixed constants.
+The remaining rough edge is configurability: the health-check window, z-threshold, and
+correlation slope thresholds are still fixed constants rather than MCP tool parameters.
 
 ## License
 
