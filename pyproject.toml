@@ -1,3 +1,7 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "mcp-telemetry-server"
 version = "0.1.0"
@@ -5,6 +9,9 @@ description = "MCP server exposing synthetic optical-module telemetry query/anom
 requires-python = ">=3.10"
 license = { text = "MIT" }
 dependencies = ["mcp>=2.0.0,<2.1.0", "numpy>=1.26"]
+
+[tool.setuptools]
+packages = ["telemetry_server"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
