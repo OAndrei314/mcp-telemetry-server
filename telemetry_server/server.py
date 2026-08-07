@@ -11,6 +11,7 @@ from mcp.server.mcpserver import MCPServer
 
 from . import METRICS
 from .anomaly import detect_anomalies as _detect_anomalies
+from .health import explain_module_health as _explain_module_health
 from .health import summarize_module_health
 from .telemetry_sim import generate_telemetry, list_module_ids
 
@@ -56,6 +57,12 @@ def detect_anomalies(module_id: str, metric: str, hours: int = 24) -> list[dict]
 def get_module_health_summary(module_id: str, hours: int = 24) -> dict:
     """Aggregate anomaly counts across all metrics into one health status + score."""
     return summarize_module_health(module_id, hours=hours)
+
+
+@app.tool()
+def explain_module_health(module_id: str, hours: int = 24, recent_hours: float = 6.0) -> dict:
+    """Return health status, recent metric trends, ranked hypotheses, and next check."""
+    return _explain_module_health(module_id, hours=hours, recent_hours=recent_hours)
 
 
 @app.tool()

@@ -7,8 +7,15 @@ way to read a tool's return value -- `content` is a human-readable rendering tha
 list-typed returns, the SDK splits into one TextContent block per element rather than
 one JSON blob. Found by actually running this, not by guessing at the API."""
 import asyncio
+import json
 
 from telemetry_server.server import app
+
+
+def _tool_result_payload(result):
+    if result.structured_content is not None:
+        return result.structured_content["result"]
+    return json.loads(result.content[0].text)
 
 
 def test_all_tools_are_registered():
@@ -19,6 +26,7 @@ def test_all_tools_are_registered():
         "get_telemetry",
         "detect_anomalies",
         "get_module_health_summary",
+        "explain_module_health",
         "list_metrics",
     }
 
@@ -37,3 +45,11 @@ def test_get_telemetry_tool_call_round_trip():
     assert isinstance(series, list)
     assert len(series) > 0
     assert "value" in series[0]
+
+
+def test_explain_module_health_tool_call_round_trip():
+    result = asyncio.run(app.call_tool("explain_module_health", {"module_id": "mod-D4"}))
+    explanation = _tool_result_payload(result)
+
+    assert explanation["fault_hypotheses"][0]["label"] == "optical_power_degradation"
+    assert explanation["recommended_next_check"]

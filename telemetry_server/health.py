@@ -16,6 +16,7 @@ from __future__ import annotations
 
 from . import METRICS
 from .anomaly import detect_anomalies
+from .correlation import metric_trends, rank_fault_hypotheses
 from .telemetry_sim import MODULE_PROFILES, generate_telemetry
 
 HEALTH_WINDOW = 10
@@ -54,4 +55,16 @@ def summarize_module_health(module_id: str, hours: int = 24) -> dict:
         "status": status,
         "health_score": round(health_score, 3),
         "metrics": per_metric,
+    }
+
+
+def explain_module_health(module_id: str, hours: int = 24, recent_hours: float = 6.0) -> dict:
+    """Return health status plus ranked, transparent next-check hypotheses."""
+    summary = summarize_module_health(module_id, hours=hours)
+    hypotheses = rank_fault_hypotheses(module_id, hours=hours, recent_hours=recent_hours)
+    return {
+        "summary": summary,
+        "recent_trends": metric_trends(module_id, hours=hours, recent_hours=recent_hours),
+        "fault_hypotheses": hypotheses,
+        "recommended_next_check": hypotheses[0]["next_check"] if hypotheses else None,
     }
