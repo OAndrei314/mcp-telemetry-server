@@ -6,13 +6,13 @@ optical-module telemetry — combining a current AI-agent trend (MCP as the stan
 layer for tool-use) with a domain I've actually worked in (host software for configuring,
 controlling, and monitoring optical modules; telemetry/calibration analysis).
 
-## Research + money thesis
+## Why this matters
 
 **Research question:** can a simple, explainable per-metric anomaly detector reliably
 separate genuinely drifting hardware from ordinary measurement noise across several
 simultaneous telemetry streams, without a black-box model?
 
-**Money question:** unplanned optical-link downtime and slow root-cause triage cost real
+**Practical impact:** unplanned optical-link downtime and slow root-cause triage cost real
 money in production networks and AI-datacenter interconnect fabric. An agent that can pull
 structured telemetry and get a fast, explainable anomaly read (via MCP, from any MCP-aware
 client) is a small step toward automating that triage instead of paging a human for every
