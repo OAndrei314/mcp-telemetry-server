@@ -53,3 +53,60 @@ def test_explain_module_health_tool_call_round_trip():
 
     assert explanation["fault_hypotheses"][0]["label"] == "optical_power_degradation"
     assert explanation["recommended_next_check"]
+
+
+def test_detect_anomalies_tool_call_accepts_window_and_z_thresh_overrides():
+    """These were previously fixed inside the tool wrapper -- confirm they're now real,
+    caller-facing MCP tool parameters that actually change the result, through the
+    call_tool path an MCP client actually uses (not just the plain Python function)."""
+    strict = asyncio.run(
+        app.call_tool(
+            "detect_anomalies",
+            {"module_id": "mod-A1", "metric": "temperature_c", "hours": 24, "z_thresh": 10.0},
+        )
+    )
+    lenient = asyncio.run(
+        app.call_tool(
+            "detect_anomalies",
+            {"module_id": "mod-A1", "metric": "temperature_c", "hours": 24, "z_thresh": 0.1},
+        )
+    )
+    assert len(_tool_result_payload(strict)) == 0
+    assert len(_tool_result_payload(lenient)) > 0
+
+
+def test_get_module_health_summary_tool_call_accepts_min_persistent_points_override():
+    default = _tool_result_payload(
+        asyncio.run(app.call_tool("get_module_health_summary", {"module_id": "mod-C3"}))
+    )
+    assert default["status"] == "critical"
+
+    loosened = _tool_result_payload(
+        asyncio.run(
+            app.call_tool(
+                "get_module_health_summary",
+                {"module_id": "mod-C3", "min_persistent_points": 100},
+            )
+        )
+    )
+    assert loosened["status"] == "healthy"
+
+
+def test_explain_module_health_tool_call_accepts_slope_thresholds_override():
+    default = _tool_result_payload(
+        asyncio.run(app.call_tool("explain_module_health", {"module_id": "mod-C3"}))
+    )
+    assert default["fault_hypotheses"][0]["label"] == "thermal_bias_coupling"
+
+    desensitized = _tool_result_payload(
+        asyncio.run(
+            app.call_tool(
+                "explain_module_health",
+                {
+                    "module_id": "mod-C3",
+                    "slope_thresholds": {"temperature_c": 100.0, "bias_current_ma": 100.0},
+                },
+            )
+        )
+    )
+    assert desensitized["fault_hypotheses"][0]["label"] != "thermal_bias_coupling"

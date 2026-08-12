@@ -33,7 +33,10 @@ alarm.
 - `telemetry_server/server.py` — wires all of the above into 6 MCP tools (`list_modules`,
   `get_telemetry`, `detect_anomalies`, `get_module_health_summary`,
   `explain_module_health`, `list_metrics`) using the MCP Python SDK's `MCPServer`
-  (SDK 2.0 — the API package that superseded `FastMCP`).
+  (SDK 2.0 — the API package that superseded `FastMCP`). The detection thresholds
+  (`window`, `z_thresh`, `min_persistent_points`, per-metric `slope_thresholds`) are real
+  tool parameters with validated defaults, not fixed constants — an MCP client can loosen
+  or tighten sensitivity per call without a code change.
 
 ## Quickstart
 
@@ -91,8 +94,20 @@ validation check.
 
 ## Status / next steps
 
-The remaining rough edge is configurability: the health-check window, z-threshold, and
-correlation slope thresholds are still fixed constants rather than MCP tool parameters.
+Configurability is done: `detect_anomalies`, `get_module_health_summary`, and
+`explain_module_health` all now accept `window`, `z_thresh`, `min_persistent_points`, and
+(for the correlation layer) a partial-override `slope_thresholds` dict, all validated
+(`window >= 2`, `z_thresh > 0`, `min_persistent_points >= 1`, unknown metric keys rejected)
+and defaulting to the values measured in "Honest results" above. Verified with tests that
+assert the override actually flips the verdict (e.g. `min_persistent_points=100` on a
+critical module forces `healthy`), not just that the parameter is accepted.
+
+What's still genuinely rough: the synthetic module set (`telemetry_sim.py`) has only two
+fault archetypes — thermal drift (temperature+bias co-drift) and power degradation — each
+isolated to its own module. There's no module with two co-occurring, competing faults, so
+`rank_fault_hypotheses`'s confidence-scoring has never actually been tested against a
+genuinely ambiguous case where two hypotheses should both score high. Adding one would be
+a more meaningful stress test than adding more single-fault modules.
 
 ## License
 

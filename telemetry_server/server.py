@@ -11,6 +11,7 @@ from mcp.server.mcpserver import MCPServer
 
 from . import METRICS
 from .anomaly import detect_anomalies as _detect_anomalies
+from .health import HEALTH_WINDOW, HEALTH_Z_THRESH, MIN_PERSISTENT_POINTS
 from .health import explain_module_health as _explain_module_health
 from .health import summarize_module_health
 from .telemetry_sim import generate_telemetry, list_module_ids
@@ -43,26 +44,69 @@ def get_telemetry(module_id: str, metric: str, hours: int = 24) -> list[dict]:
 
 
 @app.tool()
-def detect_anomalies(module_id: str, metric: str, hours: int = 24) -> list[dict]:
+def detect_anomalies(
+    module_id: str, metric: str, hours: int = 24, window: int = 8, z_thresh: float = 3.0
+) -> list[dict]:
     """Run rolling z-score anomaly detection on one metric's recent telemetry.
 
+    window: trailing-window size in points, must be >= 2 (default 8).
+    z_thresh: flag threshold in standard deviations from the window mean, must be > 0
+    (default 3.0). Lower it to catch subtler drift at the cost of more false positives.
     Returns flagged points with their z-score and the window stats they were compared to.
     """
     series = generate_telemetry(module_id, metric, hours=hours)
     values = [p["value"] for p in series]
-    return _detect_anomalies(values)
+    return _detect_anomalies(values, window=window, z_thresh=z_thresh)
 
 
 @app.tool()
-def get_module_health_summary(module_id: str, hours: int = 24) -> dict:
-    """Aggregate anomaly counts across all metrics into one health status + score."""
-    return summarize_module_health(module_id, hours=hours)
+def get_module_health_summary(
+    module_id: str,
+    hours: int = 24,
+    window: int = HEALTH_WINDOW,
+    z_thresh: float = HEALTH_Z_THRESH,
+    min_persistent_points: int = MIN_PERSISTENT_POINTS,
+) -> dict:
+    """Aggregate anomaly counts across all metrics into one health status + score.
+
+    window/z_thresh/min_persistent_points default to the values validated in the README's
+    "Honest results" section; override them to trade sensitivity for false-alarm rate
+    without editing code.
+    """
+    return summarize_module_health(
+        module_id,
+        hours=hours,
+        window=window,
+        z_thresh=z_thresh,
+        min_persistent_points=min_persistent_points,
+    )
 
 
 @app.tool()
-def explain_module_health(module_id: str, hours: int = 24, recent_hours: float = 6.0) -> dict:
-    """Return health status, recent metric trends, ranked hypotheses, and next check."""
-    return _explain_module_health(module_id, hours=hours, recent_hours=recent_hours)
+def explain_module_health(
+    module_id: str,
+    hours: int = 24,
+    recent_hours: float = 6.0,
+    window: int = HEALTH_WINDOW,
+    z_thresh: float = HEALTH_Z_THRESH,
+    min_persistent_points: int = MIN_PERSISTENT_POINTS,
+    slope_thresholds: dict[str, float] | None = None,
+) -> dict:
+    """Return health status, recent metric trends, ranked hypotheses, and next check.
+
+    slope_thresholds optionally overrides per-metric rising/falling sensitivity used by the
+    correlation layer, e.g. {"temperature_c": 0.5} to require a steeper rise before flagging
+    thermal drift. Unlisted metrics keep their validated default.
+    """
+    return _explain_module_health(
+        module_id,
+        hours=hours,
+        recent_hours=recent_hours,
+        window=window,
+        z_thresh=z_thresh,
+        min_persistent_points=min_persistent_points,
+        slope_thresholds=slope_thresholds,
+    )
 
 
 @app.tool()

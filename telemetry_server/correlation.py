@@ -17,6 +17,20 @@ SLOPE_THRESHOLDS = {
 }
 
 
+def _resolve_slope_thresholds(overrides: dict[str, float] | None) -> dict[str, float]:
+    """Merge caller-supplied per-metric overrides onto the validated defaults.
+
+    Partial overrides are allowed (e.g. only `{"temperature_c": 0.5}`) -- every metric
+    not mentioned keeps its default threshold.
+    """
+    if not overrides:
+        return SLOPE_THRESHOLDS
+    unknown = set(overrides) - set(SLOPE_THRESHOLDS)
+    if unknown:
+        raise ValueError(f"unknown metric(s) in slope_thresholds: {sorted(unknown)}")
+    return {**SLOPE_THRESHOLDS, **overrides}
+
+
 def _linear_slope(xs: list[float], ys: list[float]) -> float:
     n = len(xs)
     mean_x = sum(xs) / n
@@ -26,12 +40,21 @@ def _linear_slope(xs: list[float], ys: list[float]) -> float:
     return numerator / denominator if denominator else 0.0
 
 
-def metric_trends(module_id: str, hours: int = 24, recent_hours: float = 6.0) -> dict[str, dict]:
+def metric_trends(
+    module_id: str,
+    hours: int = 24,
+    recent_hours: float = 6.0,
+    slope_thresholds: dict[str, float] | None = None,
+) -> dict[str, dict]:
     """Return recent per-metric slopes.
 
     `generate_telemetry` returns `hours_ago` from old to new. We convert that into an
     elapsed-time axis so positive slope always means "increasing toward now".
+
+    `slope_thresholds` optionally overrides the rising/falling sensitivity for one or
+    more metrics; unlisted metrics keep their validated default (see module docstring).
     """
+    thresholds = _resolve_slope_thresholds(slope_thresholds)
     trends = {}
     for metric in METRICS:
         series = generate_telemetry(module_id, metric, hours=hours)
@@ -47,7 +70,7 @@ def metric_trends(module_id: str, hours: int = 24, recent_hours: float = 6.0) ->
         xs = [recent_hours - point["hours_ago"] for point in recent]
         ys = [point["value"] for point in recent]
         slope = _linear_slope(xs, ys)
-        threshold = SLOPE_THRESHOLDS[metric]
+        threshold = thresholds[metric]
         if slope >= threshold:
             direction = "rising"
         elif slope <= -threshold:
@@ -67,9 +90,12 @@ def rank_fault_hypotheses(
     module_id: str,
     hours: int = 24,
     recent_hours: float = 6.0,
+    slope_thresholds: dict[str, float] | None = None,
 ) -> list[dict]:
     """Rank transparent root-cause hypotheses from correlated trend directions."""
-    trends = metric_trends(module_id, hours=hours, recent_hours=recent_hours)
+    trends = metric_trends(
+        module_id, hours=hours, recent_hours=recent_hours, slope_thresholds=slope_thresholds
+    )
 
     temp_rising = trends["temperature_c"]["direction"] == "rising"
     bias_rising = trends["bias_current_ma"]["direction"] == "rising"
