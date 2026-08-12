@@ -11,6 +11,11 @@ def detect_anomalies(
     Returns a list of {"index", "value", "z_score", "window_mean", "window_std"} for
     each flagged point. The first `window` points are never flagged (no history yet).
     """
+    if window < 2:
+        raise ValueError(f"window must be >= 2, got {window}")
+    if z_thresh <= 0:
+        raise ValueError(f"z_thresh must be > 0, got {z_thresh}")
+
     anomalies = []
     for i in range(window, len(values)):
         window_vals = values[i - window : i]

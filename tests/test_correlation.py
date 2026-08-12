@@ -1,3 +1,5 @@
+import pytest
+
 from telemetry_server.correlation import metric_trends, rank_fault_hypotheses
 
 
@@ -24,3 +26,31 @@ def test_power_degradation_module_ranks_optical_power_drop():
 
     assert trends["optical_power_dbm"]["direction"] == "falling"
     assert hypotheses[0]["label"] == "optical_power_degradation"
+
+
+def test_slope_thresholds_override_actually_changes_the_verdict():
+    """The formerly-hardcoded SLOPE_THRESHOLDS are now a real, overridable parameter --
+    prove a high-enough override desensitizes thermal_bias_coupling on a module that
+    otherwise clearly ranks it first."""
+    default = rank_fault_hypotheses("mod-C3")
+    assert default[0]["label"] == "thermal_bias_coupling"
+
+    desensitized = rank_fault_hypotheses(
+        "mod-C3", slope_thresholds={"temperature_c": 100.0, "bias_current_ma": 100.0}
+    )
+    assert desensitized[0]["label"] != "thermal_bias_coupling"
+
+
+def test_slope_thresholds_override_is_partial_not_replace():
+    """Overriding one metric's threshold must not silently reset the others to some
+    implicit default -- unlisted metrics keep SLOPE_THRESHOLDS' own default."""
+    baseline = metric_trends("mod-D4")
+    overridden = metric_trends("mod-D4", slope_thresholds={"temperature_c": 100.0})
+
+    assert overridden["optical_power_dbm"]["direction"] == baseline["optical_power_dbm"]["direction"]
+    assert overridden["temperature_c"]["direction"] == "flat"
+
+
+def test_unknown_metric_in_slope_thresholds_rejected():
+    with pytest.raises(ValueError):
+        rank_fault_hypotheses("mod-A1", slope_thresholds={"not_a_real_metric": 1.0})
