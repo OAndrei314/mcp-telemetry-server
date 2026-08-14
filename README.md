@@ -21,8 +21,9 @@ alarm.
 ## What's implemented
 
 - `telemetry_server/telemetry_sim.py` — generates plausible-shaped synthetic telemetry
-  (temperature, bias current, optical power, wavelength) for 4 fictional modules; two of
-  them have a deliberately injected drift/degradation in their most recent readings.
+  (temperature, bias current, optical power, wavelength) for 5 fictional modules; three of
+  them have a deliberately injected drift/degradation in their most recent readings (two
+  single-fault modules, one dual-fault module with both faults injected at once).
 - `telemetry_server/anomaly.py` — a rolling z-score detector: every flagged point comes
   with the window mean/std it was compared against, so it's auditable, not a black box.
 - `telemetry_server/health.py` — aggregates per-metric anomaly flags into one module health
@@ -102,12 +103,28 @@ and defaulting to the values measured in "Honest results" above. Verified with t
 assert the override actually flips the verdict (e.g. `min_persistent_points=100` on a
 critical module forces `healthy`), not just that the parameter is accepted.
 
-What's still genuinely rough: the synthetic module set (`telemetry_sim.py`) has only two
-fault archetypes — thermal drift (temperature+bias co-drift) and power degradation — each
-isolated to its own module. There's no module with two co-occurring, competing faults, so
-`rank_fault_hypotheses`'s confidence-scoring has never actually been tested against a
-genuinely ambiguous case where two hypotheses should both score high. Adding one would be
-a more meaningful stress test than adding more single-fault modules.
+A fifth module, `mod-E5`, now injects two faults at once — thermal drift and optical-power
+degradation, independently of each other (neither derived from the other) — to stress-test
+`rank_fault_hypotheses` against a genuinely ambiguous case, since `mod-C3`/`mod-D4` each
+only ever have one fault active. Measured, not assumed: the correlation layer handles this
+correctly — `thermal_bias_coupling` (0.95) and `optical_power_degradation` (0.7) both land
+well above the ~0.1 baseline an inactive hypothesis sits at elsewhere, correctly ordered by
+evidence strength.
+
+But this surfaced a real, previously-untested miscalibration in the *other* severity
+signal: `summarize_module_health` reports `mod-E5` as merely `degraded` — the same status
+as a fault-free module — because splitting the same total anomaly magnitude across three
+metrics (temperature, bias current, optical power) instead of concentrating it in one or
+two makes each individual metric less likely to clear the `min_persistent_points=2`
+persistence bar on its own. So a module with *two real, independently confirmed faults* is
+currently under-reported at the health-status level even though the correlation layer
+correctly flags both. This is pinned by a test (`test_dual_fault_module_health_status_undercounts_severity`)
+rather than silently fixed, because fixing it means deciding how `summarize_module_health`
+should weigh "several distinct metrics each show some drift" against "one metric shows
+strong drift" — a real design question, not a one-line patch. That's the next genuine
+improvement here: make health-status severity aggregation aware of cross-metric
+correlation the way the hypothesis ranker already is, instead of scoring each metric's
+anomaly count in isolation.
 
 ## License
 

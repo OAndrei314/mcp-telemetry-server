@@ -2,8 +2,16 @@
 
 No real hardware or proprietary data involved -- this generates plausible-shaped time
 series (temperature, bias current, optical power, wavelength) for a small fixed set of
-fictional modules, two of which have a deliberately injected drift/degradation in their
-most recent readings so the anomaly detector in `anomaly.py` has something real to find.
+fictional modules. Three of them have a deliberately injected drift/degradation in their
+most recent readings so the anomaly detector in `anomaly.py` and the correlation layer in
+`correlation.py` have something real to find:
+
+- mod-C3: isolated thermal drift (temperature_c + bias_current_ma rising together).
+- mod-D4: isolated optical power degradation (optical_power_dbm falling).
+- mod-E5: both of the above *at once*, injected independently of each other (not one
+  derived from the other) -- a genuinely ambiguous case where two distinct root-cause
+  hypotheses should both score high, unlike mod-C3/mod-D4 where exactly one fault is
+  ever active.
 """
 from __future__ import annotations
 
@@ -17,6 +25,10 @@ MODULE_PROFILES = {
     "mod-B2": {"anomaly": None},
     "mod-C3": {"anomaly": "thermal_drift", "metrics": ["temperature_c", "bias_current_ma"]},
     "mod-D4": {"anomaly": "power_degradation", "metrics": ["optical_power_dbm"]},
+    "mod-E5": {
+        "anomaly": "dual_fault",
+        "metrics": ["temperature_c", "bias_current_ma", "optical_power_dbm"],
+    },
 }
 
 _BASELINE = {
@@ -57,9 +69,14 @@ def generate_telemetry(
         anomaly_window_hours = min(4.0, hours)
         in_window = hours_ago <= anomaly_window_hours
         ramp_progress = (anomaly_window_hours - hours_ago[in_window]) / anomaly_window_hours
-        if profile["anomaly"] == "thermal_drift":
+        # dual_fault applies both ramps below, each to its own metric family, independently
+        # of each other -- two co-occurring faults, not one causing the other.
+        if profile["anomaly"] in ("thermal_drift", "dual_fault") and metric in (
+            "temperature_c",
+            "bias_current_ma",
+        ):
             values[in_window] += ramp_progress * (6.0 * std)  # drifting up
-        elif profile["anomaly"] == "power_degradation":
+        elif profile["anomaly"] in ("power_degradation", "dual_fault") and metric == "optical_power_dbm":
             values[in_window] -= ramp_progress * (8.0 * std)  # dropping
 
     return [
