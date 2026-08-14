@@ -54,3 +54,20 @@ def test_slope_thresholds_override_is_partial_not_replace():
 def test_unknown_metric_in_slope_thresholds_rejected():
     with pytest.raises(ValueError):
         rank_fault_hypotheses("mod-A1", slope_thresholds={"not_a_real_metric": 1.0})
+
+
+def test_dual_fault_module_produces_two_genuinely_high_scoring_hypotheses():
+    """mod-C3 and mod-D4 each have exactly one active fault, so the *other* hypothesis
+    never rises much above its 0.1 baseline in the other tests above -- the ranking has
+    never actually had to arbitrate between two real, simultaneously-elevated hypotheses.
+    mod-E5 has both faults at once, independently injected. Measured (not assumed):
+    thermal_bias_coupling lands at 0.95 and optical_power_degradation at 0.7 -- both well
+    above the ~0.1 baseline a genuinely inactive hypothesis sits at elsewhere in this
+    file, and correctly ordered by which fault's evidence is stronger."""
+    hypotheses = rank_fault_hypotheses("mod-E5")
+    by_label = {h["label"]: h["confidence"] for h in hypotheses}
+
+    assert by_label["thermal_bias_coupling"] > 0.5
+    assert by_label["optical_power_degradation"] > 0.5
+    assert hypotheses[0]["label"] == "thermal_bias_coupling"
+    assert hypotheses[1]["label"] == "optical_power_degradation"

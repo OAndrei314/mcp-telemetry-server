@@ -55,6 +55,18 @@ def test_explain_module_health_tool_call_round_trip():
     assert explanation["recommended_next_check"]
 
 
+def test_explain_module_health_tool_call_surfaces_both_dual_fault_hypotheses():
+    """mod-E5 has two independently-injected faults (see test_health.py and
+    test_correlation.py for the underlying measurements) -- confirm both survive the full
+    MCP tool-call path, not just the plain-Python correlation.rank_fault_hypotheses call."""
+    result = asyncio.run(app.call_tool("explain_module_health", {"module_id": "mod-E5"}))
+    explanation = _tool_result_payload(result)
+    top_two = {h["label"] for h in explanation["fault_hypotheses"][:2]}
+
+    assert top_two == {"thermal_bias_coupling", "optical_power_degradation"}
+    assert explanation["summary"]["status"] == "degraded"
+
+
 def test_detect_anomalies_tool_call_accepts_window_and_z_thresh_overrides():
     """These were previously fixed inside the tool wrapper -- confirm they're now real,
     caller-facing MCP tool parameters that actually change the result, through the

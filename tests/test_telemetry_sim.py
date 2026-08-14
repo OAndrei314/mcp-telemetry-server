@@ -37,3 +37,19 @@ def test_thermal_drift_module_ends_hotter_than_it_started():
     early_avg = sum(p["value"] for p in series[:20]) / 20
     late_avg = sum(p["value"] for p in series[-4:]) / 4
     assert late_avg > early_avg + 2.0  # injected drift should be clearly visible
+
+
+def test_dual_fault_module_shows_both_independently_injected_drifts():
+    """mod-E5 injects thermal drift and power degradation independently of each other
+    (unlike mod-C3/mod-D4, which each have exactly one active fault) -- both should be
+    clearly visible in their respective metrics at the same time."""
+    temp_series = generate_telemetry("mod-E5", "temperature_c", hours=24)
+    power_series = generate_telemetry("mod-E5", "optical_power_dbm", hours=24)
+
+    temp_early = sum(p["value"] for p in temp_series[:20]) / 20
+    temp_late = sum(p["value"] for p in temp_series[-4:]) / 4
+    assert temp_late > temp_early + 2.0
+
+    power_early = sum(p["value"] for p in power_series[:20]) / 20
+    power_late = sum(p["value"] for p in power_series[-4:]) / 4
+    assert power_late < power_early - 1.0
