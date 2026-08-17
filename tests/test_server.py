@@ -64,7 +64,11 @@ def test_explain_module_health_tool_call_surfaces_both_dual_fault_hypotheses():
     top_two = {h["label"] for h in explanation["fault_hypotheses"][:2]}
 
     assert top_two == {"thermal_bias_coupling", "optical_power_degradation"}
-    assert explanation["summary"]["status"] == "degraded"
+    assert explanation["summary"]["status"] == "critical"
+    assert set(explanation["summary"]["correlated_faults"]) == {
+        "thermal_bias_coupling",
+        "optical_power_degradation",
+    }
 
 
 def test_detect_anomalies_tool_call_accepts_window_and_z_thresh_overrides():
@@ -93,6 +97,10 @@ def test_get_module_health_summary_tool_call_accepts_min_persistent_points_overr
     )
     assert default["status"] == "critical"
 
+    # Loosening min_persistent_points alone can't fully silence mod-C3: the correlation
+    # layer is a genuinely independent signal and still sees the real thermal/bias co-drift
+    # (see test_health.py's test_min_persistent_points_override_actually_changes_the_verdict
+    # for the full two-signal breakdown).
     loosened = _tool_result_payload(
         asyncio.run(
             app.call_tool(
@@ -101,7 +109,29 @@ def test_get_module_health_summary_tool_call_accepts_min_persistent_points_overr
             )
         )
     )
-    assert loosened["status"] == "healthy"
+    assert loosened["status"] == "degraded"
+    assert all(not m["flagged"] for m in loosened["metrics"].values())
+
+
+def test_get_module_health_summary_tool_call_accepts_correlated_fault_threshold_override():
+    """correlated_fault_threshold is the new correlation-aware severity knob (see
+    test_health.py) -- confirm it's wired through the actual MCP call_tool path, not just
+    the plain Python function."""
+    default = _tool_result_payload(
+        asyncio.run(app.call_tool("get_module_health_summary", {"module_id": "mod-E5"}))
+    )
+    assert default["status"] == "critical"
+
+    desensitized = _tool_result_payload(
+        asyncio.run(
+            app.call_tool(
+                "get_module_health_summary",
+                {"module_id": "mod-E5", "correlated_fault_threshold": 2.0},
+            )
+        )
+    )
+    assert desensitized["status"] == "degraded"
+    assert desensitized["correlated_faults"] == []
 
 
 def test_explain_module_health_tool_call_accepts_slope_thresholds_override():
