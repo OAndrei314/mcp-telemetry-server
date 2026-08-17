@@ -35,9 +35,10 @@ alarm.
   `get_telemetry`, `detect_anomalies`, `get_module_health_summary`,
   `explain_module_health`, `list_metrics`) using the MCP Python SDK's `MCPServer`
   (SDK 2.0 — the API package that superseded `FastMCP`). The detection thresholds
-  (`window`, `z_thresh`, `min_persistent_points`, per-metric `slope_thresholds`) are real
-  tool parameters with validated defaults, not fixed constants — an MCP client can loosen
-  or tighten sensitivity per call without a code change.
+  (`window`, `z_thresh`, `min_persistent_points`, `correlated_fault_threshold`, per-metric
+  `slope_thresholds`) are real tool parameters with validated defaults, not fixed
+  constants — an MCP client can loosen or tighten sensitivity per call without a code
+  change.
 
 ## Quickstart
 
@@ -96,14 +97,15 @@ validation check.
 ## Status / next steps
 
 Configurability is done: `detect_anomalies`, `get_module_health_summary`, and
-`explain_module_health` all now accept `window`, `z_thresh`, `min_persistent_points`, and
-(for the correlation layer) a partial-override `slope_thresholds` dict, all validated
-(`window >= 2`, `z_thresh > 0`, `min_persistent_points >= 1`, unknown metric keys rejected)
-and defaulting to the values measured in "Honest results" above. Verified with tests that
-assert the override actually flips the verdict (e.g. `min_persistent_points=100` on a
-critical module forces `healthy`), not just that the parameter is accepted.
+`explain_module_health` all now accept `window`, `z_thresh`, `min_persistent_points`,
+`correlated_fault_threshold`, and (for the correlation layer) a partial-override
+`slope_thresholds` dict, all validated (`window >= 2`, `z_thresh > 0`,
+`min_persistent_points >= 1`, `correlated_fault_threshold > 0`, unknown metric keys
+rejected) and defaulting to the values measured in "Honest results" above. Verified with
+tests that assert each override actually flips the verdict, not just that the parameter is
+accepted.
 
-A fifth module, `mod-E5`, now injects two faults at once — thermal drift and optical-power
+A fifth module, `mod-E5`, injects two faults at once — thermal drift and optical-power
 degradation, independently of each other (neither derived from the other) — to stress-test
 `rank_fault_hypotheses` against a genuinely ambiguous case, since `mod-C3`/`mod-D4` each
 only ever have one fault active. Measured, not assumed: the correlation layer handles this
@@ -111,20 +113,38 @@ correctly — `thermal_bias_coupling` (0.95) and `optical_power_degradation` (0.
 well above the ~0.1 baseline an inactive hypothesis sits at elsewhere, correctly ordered by
 evidence strength.
 
-But this surfaced a real, previously-untested miscalibration in the *other* severity
-signal: `summarize_module_health` reports `mod-E5` as merely `degraded` — the same status
-as a fault-free module — because splitting the same total anomaly magnitude across three
-metrics (temperature, bias current, optical power) instead of concentrating it in one or
-two makes each individual metric less likely to clear the `min_persistent_points=2`
-persistence bar on its own. So a module with *two real, independently confirmed faults* is
-currently under-reported at the health-status level even though the correlation layer
-correctly flags both. This is pinned by a test (`test_dual_fault_module_health_status_undercounts_severity`)
-rather than silently fixed, because fixing it means deciding how `summarize_module_health`
-should weigh "several distinct metrics each show some drift" against "one metric shows
-strong drift" — a real design question, not a one-line patch. That's the next genuine
-improvement here: make health-status severity aggregation aware of cross-metric
-correlation the way the hypothesis ranker already is, instead of scoring each metric's
-anomaly count in isolation.
+That surfaced a real, previously-untested miscalibration in the *other* severity signal:
+`summarize_module_health` used to report `mod-E5` as merely `degraded` — the same status as
+a fault-free module — because splitting the same total anomaly magnitude across three
+metrics (temperature, bias current, optical power) instead of concentrating it in one or two
+made each individual metric less likely to clear the `min_persistent_points=2` persistence
+bar on its own, even though the correlation layer correctly flagged both faults. This is now
+fixed: `summarize_module_health` takes the *max* of two independent severity signals —
+`flagged_metric_count` (point-anomaly counting, as before) and `correlated_fault_count`
+(fault hypotheses other than `ordinary_measurement_noise` scoring at or above
+`correlated_fault_threshold`, default `0.5`, chosen because measured baseline hypothesis
+scores on fault-free modules top out at 0.2 while every real, engaged fault in this dataset
+scores 0.7+ — see `health.CORRELATED_FAULT_THRESHOLD`'s docstring). `mod-E5` now correctly
+reports `critical`, and the fix can only ever raise severity relative to the old
+point-counting-only behavior, never lower it — confirmed by
+`test_dual_fault_module_health_status_reflects_correlated_severity` and
+`test_fault_free_modules_have_no_correlated_faults` (the fault-free modules stay clean, so
+this isn't a new source of false positives).
+
+One honest side effect worth calling out: because the two severity signals are now genuinely
+independent, loosening only `min_persistent_points` on `mod-C3` no longer forces `healthy`
+by itself — the correlation layer still sees the real thermal/bias co-drift regardless of
+the point-anomaly persistence bar, so the status now correctly stays `degraded` unless
+`correlated_fault_threshold` is loosened too. This is pinned by
+`test_min_persistent_points_override_actually_changes_the_verdict` in `tests/test_health.py`.
+
+Next genuine step: `correlated_fault_threshold=0.5` is validated against this repo's 5 fixed
+synthetic modules, not stress-tested against a fault that engages only one of the two metrics
+`thermal_bias_coupling` currently requires together (e.g. bias-current drift alone, without a
+temperature rise) — `rank_fault_hypotheses` can in principle score such a case as low as 0.4,
+which the current threshold would miss. Adding a sixth module with an isolated single-metric
+thermal fault would be the natural way to find out whether 0.5 still holds up, or needs to
+move.
 
 ## License
 

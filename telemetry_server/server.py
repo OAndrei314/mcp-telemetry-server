@@ -11,7 +11,7 @@ from mcp.server.mcpserver import MCPServer
 
 from . import METRICS
 from .anomaly import detect_anomalies as _detect_anomalies
-from .health import HEALTH_WINDOW, HEALTH_Z_THRESH, MIN_PERSISTENT_POINTS
+from .health import CORRELATED_FAULT_THRESHOLD, HEALTH_WINDOW, HEALTH_Z_THRESH, MIN_PERSISTENT_POINTS
 from .health import explain_module_health as _explain_module_health
 from .health import summarize_module_health
 from .telemetry_sim import generate_telemetry, list_module_ids
@@ -63,22 +63,32 @@ def detect_anomalies(
 def get_module_health_summary(
     module_id: str,
     hours: int = 24,
+    recent_hours: float = 6.0,
     window: int = HEALTH_WINDOW,
     z_thresh: float = HEALTH_Z_THRESH,
     min_persistent_points: int = MIN_PERSISTENT_POINTS,
+    slope_thresholds: dict[str, float] | None = None,
+    correlated_fault_threshold: float = CORRELATED_FAULT_THRESHOLD,
 ) -> dict:
     """Aggregate anomaly counts across all metrics into one health status + score.
 
     window/z_thresh/min_persistent_points default to the values validated in the README's
     "Honest results" section; override them to trade sensitivity for false-alarm rate
-    without editing code.
+    without editing code. Status severity is the max of point-anomaly counting and a
+    correlation-aware signal: any fault hypothesis (see `explain_module_health`) scoring at
+    or above `correlated_fault_threshold` counts as one additional correlated fault, so a
+    module whose real fault is split across several metrics at once isn't under-reported
+    just because no single metric individually clears `min_persistent_points`.
     """
     return summarize_module_health(
         module_id,
         hours=hours,
+        recent_hours=recent_hours,
         window=window,
         z_thresh=z_thresh,
         min_persistent_points=min_persistent_points,
+        slope_thresholds=slope_thresholds,
+        correlated_fault_threshold=correlated_fault_threshold,
     )
 
 
@@ -91,12 +101,15 @@ def explain_module_health(
     z_thresh: float = HEALTH_Z_THRESH,
     min_persistent_points: int = MIN_PERSISTENT_POINTS,
     slope_thresholds: dict[str, float] | None = None,
+    correlated_fault_threshold: float = CORRELATED_FAULT_THRESHOLD,
 ) -> dict:
     """Return health status, recent metric trends, ranked hypotheses, and next check.
 
     slope_thresholds optionally overrides per-metric rising/falling sensitivity used by the
     correlation layer, e.g. {"temperature_c": 0.5} to require a steeper rise before flagging
-    thermal drift. Unlisted metrics keep their validated default.
+    thermal drift. Unlisted metrics keep their validated default. correlated_fault_threshold
+    overrides the correlation-aware severity signal in the nested "summary" (see
+    get_module_health_summary).
     """
     return _explain_module_health(
         module_id,
@@ -106,6 +119,7 @@ def explain_module_health(
         z_thresh=z_thresh,
         min_persistent_points=min_persistent_points,
         slope_thresholds=slope_thresholds,
+        correlated_fault_threshold=correlated_fault_threshold,
     )
 
 
