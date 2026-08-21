@@ -71,6 +71,16 @@ def test_explain_module_health_tool_call_surfaces_both_dual_fault_hypotheses():
     }
 
 
+def test_get_module_health_summary_tool_call_does_not_misattribute_isolated_bias_drift():
+    """mod-F6's isolated bias-current drift structurally caps thermal_bias_coupling's
+    confidence at 0.4 (see test_health.py) -- confirm the correlated-fault exclusion holds
+    through the actual MCP call_tool path, not just the plain Python function."""
+    result = asyncio.run(app.call_tool("get_module_health_summary", {"module_id": "mod-F6"}))
+    summary = _tool_result_payload(result)
+
+    assert "thermal_bias_coupling" not in summary["correlated_faults"]
+
+
 def test_detect_anomalies_tool_call_accepts_window_and_z_thresh_overrides():
     """These were previously fixed inside the tool wrapper -- confirm they're now real,
     caller-facing MCP tool parameters that actually change the result, through the

@@ -39,6 +39,23 @@ def test_thermal_drift_module_ends_hotter_than_it_started():
     assert late_avg > early_avg + 2.0  # injected drift should be clearly visible
 
 
+def test_isolated_bias_drift_module_leaves_temperature_flat():
+    """mod-F6 injects bias_current_ma drift alone -- unlike mod-C3, temperature_c must stay
+    untouched so the correlation layer's thermal_bias_coupling hypothesis (which scores on
+    temperature_c + bias_current_ma together) has a genuine single-metric case to arbitrate,
+    not a second copy of mod-C3's already-coupled fault."""
+    bias_series = generate_telemetry("mod-F6", "bias_current_ma", hours=24)
+    temp_series = generate_telemetry("mod-F6", "temperature_c", hours=24)
+
+    bias_early = sum(p["value"] for p in bias_series[:20]) / 20
+    bias_late = sum(p["value"] for p in bias_series[-4:]) / 4
+    assert bias_late > bias_early + 2.0  # injected drift should be clearly visible
+
+    temp_early = sum(p["value"] for p in temp_series[:20]) / 20
+    temp_late = sum(p["value"] for p in temp_series[-4:]) / 4
+    assert abs(temp_late - temp_early) < 2.0  # no injected drift here
+
+
 def test_dual_fault_module_shows_both_independently_injected_drifts():
     """mod-E5 injects thermal drift and power degradation independently of each other
     (unlike mod-C3/mod-D4, which each have exactly one active fault) -- both should be

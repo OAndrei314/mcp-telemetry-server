@@ -13,7 +13,14 @@ SLOPE_THRESHOLDS = {
     "temperature_c": 0.35,
     "bias_current_ma": 0.45,
     "optical_power_dbm": 0.04,
-    "wavelength_nm": 0.003,
+    # Recalibrated from 0.003 (see README "Honest results"): measured noise-only slope
+    # across all 6 fault-free-for-this-metric modules tops out at 0.00587 (mod-F6) --
+    # 0.003 was below that observed max and produced a real spurious
+    # "wavelength_control_drift" hypothesis. 0.008 sits above the measured noise ceiling
+    # with margin. No module currently injects a genuine wavelength_nm fault, so this is
+    # validated against known-good (noise) data only, not a known-bad case -- see
+    # "Status / next steps".
+    "wavelength_nm": 0.008,
 }
 
 

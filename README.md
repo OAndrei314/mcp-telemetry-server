@@ -21,9 +21,10 @@ alarm.
 ## What's implemented
 
 - `telemetry_server/telemetry_sim.py` — generates plausible-shaped synthetic telemetry
-  (temperature, bias current, optical power, wavelength) for 5 fictional modules; three of
-  them have a deliberately injected drift/degradation in their most recent readings (two
-  single-fault modules, one dual-fault module with both faults injected at once).
+  (temperature, bias current, optical power, wavelength) for 6 fictional modules; four of
+  them have a deliberately injected drift/degradation in their most recent readings (three
+  single-fault modules — two of them isolated to one metric each — one dual-fault module
+  with both faults injected at once).
 - `telemetry_server/anomaly.py` — a rolling z-score detector: every flagged point comes
   with the window mean/std it was compared against, so it's auditable, not a black box.
 - `telemetry_server/health.py` — aggregates per-metric anomaly flags into one module health
@@ -138,13 +139,43 @@ the point-anomaly persistence bar, so the status now correctly stays `degraded` 
 `correlated_fault_threshold` is loosened too. This is pinned by
 `test_min_persistent_points_override_actually_changes_the_verdict` in `tests/test_health.py`.
 
-Next genuine step: `correlated_fault_threshold=0.5` is validated against this repo's 5 fixed
-synthetic modules, not stress-tested against a fault that engages only one of the two metrics
-`thermal_bias_coupling` currently requires together (e.g. bias-current drift alone, without a
-temperature rise) — `rank_fault_hypotheses` can in principle score such a case as low as 0.4,
-which the current threshold would miss. Adding a sixth module with an isolated single-metric
-thermal fault would be the natural way to find out whether 0.5 still holds up, or needs to
-move.
+A sixth module, `mod-F6`, closes that gap: an isolated `bias_current_ma` drift with
+`temperature_c` held flat, using the identical ramp function `mod-C3` applies to the same
+metric. Measured, not assumed: `thermal_bias_coupling`'s own scoring formula (0.1 base +
+0.3 for bias rising, no +0.2 co-drift bonus since temperature never rises) caps at exactly
+0.4 for this case — below `CORRELATED_FAULT_THRESHOLD` (0.5), so an isolated single-metric
+fault is correctly *not* misattributed to the coupled thermal/bias hypothesis. 0.4 is a real
+boundary, not a coincidence: lowering the threshold to 0.39 in a test flips it into
+`correlated_faults`. `0.5` holds up.
+
+Adding `mod-F6` surfaced a second, unrelated finding along the way, worth reporting honestly
+rather than quietly dropping: at the original `SLOPE_THRESHOLDS["wavelength_nm"] = 0.003`,
+`mod-F6`'s pure measurement noise on `wavelength_nm` (a metric no module injects a real fault
+into) produced a slope of `0.00587/hour` — clearing that threshold and registering a spurious
+`wavelength_control_drift` hypothesis at 0.55 confidence, *above* the correlated-fault
+threshold. Checking the noise-only slope across all 6 modules (none of which touch
+`wavelength_nm`) showed the next-highest sample was `0.00283` (`mod-D4`) — `0.003` was simply
+below the real noise ceiling, not a margin-of-error rounding issue. `wavelength_nm`'s
+threshold is now `0.008`, with a comment noting it's validated only against known-good
+(noise) data, since no module currently injects a genuine wavelength fault to check
+known-bad separation against — an honestly-labeled limitation, not a hidden one.
+
+Even with that fixed, `mod-F6` still lands on `degraded`, not `healthy` — but for the *same*
+reason `mod-A1`/`mod-B2` already do: `wavelength_nm`'s point-anomaly false-alarm rate (see
+above), independent of the slope-threshold fix. The real bias-current fault itself stays
+under both detection signals' bars (1 anomaly point on `bias_current_ma`, below the
+persistence bar of 2; 0.4 confidence on `thermal_bias_coupling`, below 0.5) — so `mod-F6`'s
+correct-looking `degraded` verdict is presently coincidental, not evidence the fault was
+actually found. That's a genuine, previously-untested detection gap, not a new bug this
+change introduced: no existing hypothesis represents "isolated bias-current drift without
+thermal involvement," since `thermal_bias_coupling` structurally can't clear 0.5 without a
+temperature co-drift by construction.
+
+Next genuine step: add a `bias_current_ma`-only fault hypothesis to `rank_fault_hypotheses`
+(distinct from `thermal_bias_coupling`, which should stay reserved for genuine co-drift), so
+an isolated bias fault like `mod-F6`'s gets a correct, specific attribution and next-check
+recommendation instead of relying on `wavelength_nm`'s unrelated false-alarm rate to reach
+`degraded` at all.
 
 ## License
 

@@ -101,6 +101,47 @@ def test_correlated_fault_threshold_must_be_positive():
         summarize_module_health("mod-A1", correlated_fault_threshold=0.0)
 
 
+def test_isolated_bias_drift_module_not_misattributed_to_thermal_coupling():
+    """mod-F6's isolated bias-current drift (see test_correlation.py's
+    test_isolated_bias_drift_scores_thermal_bias_coupling_below_half: thermal_bias_coupling
+    scores exactly 0.4, structurally capped below 0.5 without a temperature co-drift) must
+    not appear in correlated_faults -- confirming CORRELATED_FAULT_THRESHOLD=0.5 correctly
+    tells a real single-metric fault apart from an actual coupled thermal/bias fault, the
+    exact edge case the README flagged as untested."""
+    summary = summarize_module_health("mod-F6")
+    assert "thermal_bias_coupling" not in summary["correlated_faults"]
+
+    # 0.4 is a real boundary, not a coincidence: lowering the threshold just below it
+    # flips thermal_bias_coupling into correlated_faults.
+    sensitive = summarize_module_health("mod-F6", correlated_fault_threshold=0.39)
+    assert "thermal_bias_coupling" in sensitive["correlated_faults"]
+
+
+def test_isolated_bias_drift_module_bias_metric_under_persistence_bar():
+    """The injected bias-current ramp on mod-F6 is the identical ramp function mod-C3
+    applies to the same metric (see telemetry_sim.py) -- and mod-C3's own bias_current_ma
+    also stays under MIN_PERSISTENT_POINTS there (see the "Honest results" section on
+    under-detecting mod-C3's injected bias drift). This isn't a new problem specific to
+    mod-F6; it's the same pre-existing point-detector characteristic, now visible without a
+    co-drifting temperature_c to carry the module to "critical" some other way."""
+    summary = summarize_module_health("mod-F6")
+    assert summary["metrics"]["bias_current_ma"]["flagged"] is False
+    assert summary["metrics"]["bias_current_ma"]["num_anomalies"] < 2
+
+
+def test_isolated_bias_drift_module_still_not_reported_healthy():
+    """mod-F6 lands on "degraded", same as the two genuinely fault-free modules
+    (mod-A1/mod-B2) -- driven by the same already-documented wavelength_nm point-anomaly
+    false-alarm rate (see "Honest results"), not by correctly attributing the real
+    bias-current fault. This is a real, honest gap this module surfaces for the first time:
+    an isolated single-metric fault can currently net out to the *same* status a
+    fault-free module reaches by chance, for an unrelated reason -- see README
+    "Status / next steps"."""
+    summary = summarize_module_health("mod-F6")
+    assert summary["status"] == "degraded"
+    assert summary["correlated_faults"] == []
+
+
 def test_fault_free_modules_have_no_correlated_faults():
     """The correlation-aware severity signal must not itself become a new source of false
     positives on modules with no injected fault."""

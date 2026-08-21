@@ -56,6 +56,23 @@ def test_unknown_metric_in_slope_thresholds_rejected():
         rank_fault_hypotheses("mod-A1", slope_thresholds={"not_a_real_metric": 1.0})
 
 
+def test_isolated_bias_drift_scores_thermal_bias_coupling_below_half():
+    """mod-F6 stress-tests the exact gap the README flagged as untested: a fault that
+    engages only *one* of the two metrics thermal_bias_coupling scores together (bias
+    current alone, no temperature rise). thermal_score's own formula (0.1 base + 0.3 for
+    bias_rising, no +0.2 co-drift bonus since temp never rises) caps at exactly 0.4 for
+    this case -- below CORRELATED_FAULT_THRESHOLD (0.5), so an isolated single-metric fault
+    is correctly NOT misattributed to the coupled thermal/bias hypothesis."""
+    trends = metric_trends("mod-F6")
+    hypotheses = rank_fault_hypotheses("mod-F6")
+    by_label = {h["label"]: h["confidence"] for h in hypotheses}
+
+    assert trends["bias_current_ma"]["direction"] == "rising"
+    assert trends["temperature_c"]["direction"] == "flat"
+    assert by_label["thermal_bias_coupling"] == 0.4
+    assert hypotheses[0]["label"] == "thermal_bias_coupling"
+
+
 def test_dual_fault_module_produces_two_genuinely_high_scoring_hypotheses():
     """mod-C3 and mod-D4 each have exactly one active fault, so the *other* hypothesis
     never rises much above its 0.1 baseline in the other tests above -- the ranking has
