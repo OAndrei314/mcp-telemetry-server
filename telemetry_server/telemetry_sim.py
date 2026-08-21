@@ -12,6 +12,10 @@ most recent readings so the anomaly detector in `anomaly.py` and the correlation
   derived from the other) -- a genuinely ambiguous case where two distinct root-cause
   hypotheses should both score high, unlike mod-C3/mod-D4 where exactly one fault is
   ever active.
+- mod-F6: bias_current_ma drift *alone*, with temperature_c held flat -- unlike mod-C3,
+  only one of the two metrics `thermal_bias_coupling` scores together actually moves.
+  Added to stress-test whether `CORRELATED_FAULT_THRESHOLD` (see health.py) can tell a
+  real, isolated single-metric fault apart from an actual coupled thermal/bias fault.
 """
 from __future__ import annotations
 
@@ -29,6 +33,7 @@ MODULE_PROFILES = {
         "anomaly": "dual_fault",
         "metrics": ["temperature_c", "bias_current_ma", "optical_power_dbm"],
     },
+    "mod-F6": {"anomaly": "bias_only_drift", "metrics": ["bias_current_ma"]},
 }
 
 _BASELINE = {
@@ -77,7 +82,9 @@ def generate_telemetry(
         ):
             values[in_window] += ramp_progress * (6.0 * std)  # drifting up
         elif profile["anomaly"] in ("power_degradation", "dual_fault") and metric == "optical_power_dbm":
-            values[in_window] -= ramp_progress * (8.0 * std)  # dropping
+            values[in_window] -= ramp_progress * (8.0 * std)
+        elif profile["anomaly"] == "bias_only_drift" and metric == "bias_current_ma":
+            values[in_window] += ramp_progress * (6.0 * std)  # dropping
 
     return [
         {"hours_ago": round(float(h), 3), "value": round(float(v), 4)}
