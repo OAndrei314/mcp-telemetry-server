@@ -131,6 +131,29 @@ def rank_fault_hypotheses(
         }
     )
 
+    # Distinct from thermal_bias_coupling above: that hypothesis structurally caps at 0.4
+    # when bias current rises without a temperature co-drift (see README "Status / next
+    # steps" and mod-F6 in telemetry_sim.py), so an isolated bias-only fault was previously
+    # invisible to correlated-fault scoring -- it could only reach "degraded" by chance, via
+    # an unrelated metric's point-anomaly false alarm. This hypothesis fires only when bias
+    # is rising *and* temperature is not, so it never competes with thermal_bias_coupling for
+    # the same evidence -- a module can score high on at most one of the two.
+    bias_isolated_score = 0.1
+    bias_isolated_reasons = []
+    if bias_rising and not temp_rising:
+        bias_isolated_score += 0.55
+        bias_isolated_reasons.append(
+            "bias-current trend is rising without a temperature co-drift"
+        )
+    hypotheses.append(
+        {
+            "label": "bias_current_isolated_drift",
+            "confidence": round(min(bias_isolated_score, 0.9), 3),
+            "evidence": bias_isolated_reasons or ["no isolated bias-current drift"],
+            "next_check": "Inspect the bias-compensation loop and laser driver for drift independent of thermal effects.",
+        }
+    )
+
     power_score = 0.1
     power_reasons = []
     if power_falling:
