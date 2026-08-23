@@ -130,16 +130,27 @@ def test_isolated_bias_drift_module_bias_metric_under_persistence_bar():
 
 
 def test_isolated_bias_drift_module_still_not_reported_healthy():
-    """mod-F6 lands on "degraded", same as the two genuinely fault-free modules
-    (mod-A1/mod-B2) -- driven by the same already-documented wavelength_nm point-anomaly
-    false-alarm rate (see "Honest results"), not by correctly attributing the real
-    bias-current fault. This is a real, honest gap this module surfaces for the first time:
-    an isolated single-metric fault can currently net out to the *same* status a
-    fault-free module reaches by chance, for an unrelated reason -- see README
-    "Status / next steps"."""
+    """mod-F6 lands on "degraded", the same status the two genuinely fault-free modules
+    (mod-A1/mod-B2) land on -- but for the right reason now, not by accident. Before the
+    bias_current_isolated_drift hypothesis existed, mod-F6 only reached "degraded" via
+    the unrelated wavelength_nm point-anomaly false-alarm rate (see "Honest results"),
+    with correlated_faults == [] -- i.e. the real bias fault itself was invisible to the
+    correlation layer. Now correlated_faults correctly names the real fault directly."""
     summary = summarize_module_health("mod-F6")
     assert summary["status"] == "degraded"
-    assert summary["correlated_faults"] == []
+    assert summary["correlated_faults"] == ["bias_current_isolated_drift"]
+
+
+def test_isolated_bias_drift_correctly_attributed_even_without_the_wavelength_false_alarm():
+    """The point this hypothesis exists to fix: previously, mod-F6's real fault relied
+    entirely on an unrelated wavelength_nm false alarm to register as anything at all --
+    silence that false alarm (a very high min_persistent_points) and the module used to
+    fall back to "healthy" with the real fault completely unreported. Now the correlation
+    layer catches it independently of point-anomaly counting."""
+    isolated = summarize_module_health("mod-F6", min_persistent_points=100)
+    assert isolated["status"] == "degraded"
+    assert isolated["correlated_faults"] == ["bias_current_isolated_drift"]
+    assert all(not m["flagged"] for m in isolated["metrics"].values())
 
 
 def test_fault_free_modules_have_no_correlated_faults():

@@ -171,11 +171,30 @@ change introduced: no existing hypothesis represents "isolated bias-current drif
 thermal involvement," since `thermal_bias_coupling` structurally can't clear 0.5 without a
 temperature co-drift by construction.
 
-Next genuine step: add a `bias_current_ma`-only fault hypothesis to `rank_fault_hypotheses`
-(distinct from `thermal_bias_coupling`, which should stay reserved for genuine co-drift), so
-an isolated bias fault like `mod-F6`'s gets a correct, specific attribution and next-check
-recommendation instead of relying on `wavelength_nm`'s unrelated false-alarm rate to reach
-`degraded` at all.
+That gap is now closed: `rank_fault_hypotheses` has a fifth hypothesis,
+`bias_current_isolated_drift`, that fires only when bias current is rising *and*
+temperature is not — the exact complement of what `thermal_bias_coupling` scores, so the
+two hypotheses partition coupled vs. isolated bias drift instead of double-counting the
+same evidence. On `mod-F6` it scores `0.1 + 0.55 = 0.65` (above
+`CORRELATED_FAULT_THRESHOLD`), correctly outranking `thermal_bias_coupling`'s capped `0.4`
+and landing in `summarize_module_health`'s `correlated_faults`. Verified two ways in
+`tests/test_health.py`: `mod-F6`'s `correlated_faults` is now `["bias_current_isolated_drift"]`
+instead of `[]`, and — the actual point of the fix — that attribution survives even with
+`min_persistent_points=100` (silencing every point-anomaly flag, including the
+`wavelength_nm` false alarm the module used to depend on), proving the real fault is now
+caught by the correlation layer on its own merits, not by accident. `mod-A1`/`mod-B2`
+(fault-free) and `mod-C3` (genuine thermal/bias co-drift) all confirm the new hypothesis
+stays at its `0.1` baseline when bias isn't rising in isolation — see
+`tests/test_correlation.py`.
+
+Next genuine step: the correlation layer's four "has a real fault" hypotheses
+(`thermal_bias_coupling`, `optical_power_degradation`, `wavelength_control_drift`, and now
+`bias_current_isolated_drift`) were each added reactively, one synthetic module at a time,
+to close a specific gap a new module exposed. There's no module yet with a genuine
+*wavelength* fault (see the still-open limitation above), so `wavelength_control_drift`
+remains validated only against noise, never against a real positive case — the next module
+worth adding is one with an actual injected `wavelength_nm` drift, to find out whether that
+hypothesis's scoring is well-calibrated or just untested.
 
 ## License
 

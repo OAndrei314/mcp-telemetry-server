@@ -70,7 +70,38 @@ def test_isolated_bias_drift_scores_thermal_bias_coupling_below_half():
     assert trends["bias_current_ma"]["direction"] == "rising"
     assert trends["temperature_c"]["direction"] == "flat"
     assert by_label["thermal_bias_coupling"] == 0.4
-    assert hypotheses[0]["label"] == "thermal_bias_coupling"
+
+
+def test_isolated_bias_drift_ranks_bias_current_isolated_drift_first():
+    """The gap the previous test's docstring used to flag as unresolved: mod-F6's real
+    fault now has a dedicated hypothesis that specifically requires bias rising *without*
+    a temperature co-drift, so it outranks thermal_bias_coupling's structurally-capped 0.4
+    instead of leaving the module's real fault with no hypothesis above the persistence/
+    correlation bar at all."""
+    hypotheses = rank_fault_hypotheses("mod-F6")
+    by_label = {h["label"]: h["confidence"] for h in hypotheses}
+
+    assert by_label["bias_current_isolated_drift"] == 0.65
+    assert hypotheses[0]["label"] == "bias_current_isolated_drift"
+    assert "without a temperature co-drift" in hypotheses[0]["evidence"][0]
+
+
+def test_bias_current_isolated_drift_stays_at_baseline_when_temperature_also_rises():
+    """mod-C3 has a genuine *coupled* thermal/bias fault (both metrics rising together) --
+    bias_current_isolated_drift must not also fire here, or the two hypotheses would
+    double-count the same evidence instead of cleanly partitioning coupled vs. isolated
+    bias drift."""
+    hypotheses = rank_fault_hypotheses("mod-C3")
+    by_label = {h["label"]: h["confidence"] for h in hypotheses}
+
+    assert by_label["bias_current_isolated_drift"] == 0.1
+    assert by_label["bias_current_isolated_drift"] < by_label["thermal_bias_coupling"]
+
+
+def test_bias_current_isolated_drift_stays_at_baseline_on_fault_free_modules():
+    for module_id in ("mod-A1", "mod-B2"):
+        by_label = {h["label"]: h["confidence"] for h in rank_fault_hypotheses(module_id)}
+        assert by_label["bias_current_isolated_drift"] == 0.1
 
 
 def test_dual_fault_module_produces_two_genuinely_high_scoring_hypotheses():
