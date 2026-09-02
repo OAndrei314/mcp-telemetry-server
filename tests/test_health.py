@@ -153,6 +153,38 @@ def test_isolated_bias_drift_correctly_attributed_even_without_the_wavelength_fa
     assert all(not m["flagged"] for m in isolated["metrics"].values())
 
 
+def test_isolated_wavelength_drift_correctly_attributed_even_without_point_flags():
+    """mod-G7's real fault (see test_correlation.py's
+    test_isolated_wavelength_drift_ranks_wavelength_control_drift_first) sits entirely on
+    wavelength_nm's slope, not on any single point clearing the persistence bar --
+    wavelength_nm itself gets 0 point-anomaly flags at the health-scoring settings. Silencing
+    point-anomaly counting entirely still leaves the correlation layer catching the real
+    fault on its own merits, the same pattern proven for mod-F6's isolated bias drift."""
+    summary = summarize_module_health("mod-G7")
+    assert summary["metrics"]["wavelength_nm"]["flagged"] is False
+
+    isolated = summarize_module_health("mod-G7", min_persistent_points=100)
+    assert isolated["status"] == "degraded"
+    assert isolated["correlated_faults"] == ["wavelength_control_drift"]
+    assert all(not m["flagged"] for m in isolated["metrics"].values())
+
+
+def test_isolated_wavelength_drift_point_counting_alone_would_misattribute_the_cause():
+    """An honest, slightly uncomfortable finding, not a hidden one: with the
+    correlation-aware signal disabled, mod-G7 still lands on "degraded" -- but for the
+    *wrong* reason. Point-anomaly counting flags optical_power_dbm (an ordinary noise false
+    alarm -- mod-G7 injects no optical-power fault) while missing wavelength_nm, the metric
+    with the actual injected drift, entirely (0 anomalies there). The old point-counting-only
+    design would have gotten the severity *level* right by accident while being wrong about
+    *where* the problem is; the correlation layer is what actually names the real fault (see
+    test_isolated_wavelength_drift_correctly_attributed_even_without_point_flags above)."""
+    desensitized = summarize_module_health("mod-G7", correlated_fault_threshold=2.0)
+    assert desensitized["status"] == "degraded"
+    assert desensitized["correlated_faults"] == []
+    assert desensitized["metrics"]["optical_power_dbm"]["flagged"] is True
+    assert desensitized["metrics"]["wavelength_nm"]["flagged"] is False
+
+
 def test_fault_free_modules_have_no_correlated_faults():
     """The correlation-aware severity signal must not itself become a new source of false
     positives on modules with no injected fault."""

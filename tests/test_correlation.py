@@ -104,6 +104,24 @@ def test_bias_current_isolated_drift_stays_at_baseline_on_fault_free_modules():
         assert by_label["bias_current_isolated_drift"] == 0.1
 
 
+def test_isolated_wavelength_drift_ranks_wavelength_control_drift_first():
+    """mod-G7 gives wavelength_control_drift its first known-bad case (see README
+    "Status / next steps" -- it had only ever been checked against noise-only known-good
+    data before). Measured, not assumed: wavelength_score's own formula (0.1 base + 0.45 for
+    wavelength moving, no +0.2 co-drift bonus since temperature never rises) lands at exactly
+    0.55 -- above CORRELATED_FAULT_THRESHOLD (0.5) with margin, and clearly ahead of every
+    other hypothesis, which stay near their inactive baseline."""
+    trends = metric_trends("mod-G7")
+    hypotheses = rank_fault_hypotheses("mod-G7")
+    by_label = {h["label"]: h["confidence"] for h in hypotheses}
+
+    assert trends["wavelength_nm"]["direction"] == "rising"
+    assert trends["temperature_c"]["direction"] == "flat"
+    assert by_label["wavelength_control_drift"] == 0.55
+    assert hypotheses[0]["label"] == "wavelength_control_drift"
+    assert "wavelength trend is moving" in hypotheses[0]["evidence"][0]
+
+
 def test_dual_fault_module_produces_two_genuinely_high_scoring_hypotheses():
     """mod-C3 and mod-D4 each have exactly one active fault, so the *other* hypothesis
     never rises much above its 0.1 baseline in the other tests above -- the ranking has

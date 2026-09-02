@@ -56,6 +56,24 @@ def test_isolated_bias_drift_module_leaves_temperature_flat():
     assert abs(temp_late - temp_early) < 2.0  # no injected drift here
 
 
+def test_isolated_wavelength_drift_module_leaves_temperature_flat():
+    """mod-G7 injects wavelength_nm drift alone -- the first module with a genuine
+    wavelength fault (see README "Status / next steps": wavelength_control_drift had only
+    ever been validated against noise, never a real positive case). temperature_c must stay
+    untouched so wavelength_control_drift's "coincides with temperature rise" bonus is not
+    accidentally exercised here."""
+    wavelength_series = generate_telemetry("mod-G7", "wavelength_nm", hours=24)
+    temp_series = generate_telemetry("mod-G7", "temperature_c", hours=24)
+
+    wl_early = sum(p["value"] for p in wavelength_series[:20]) / 20
+    wl_late = sum(p["value"] for p in wavelength_series[-4:]) / 4
+    assert wl_late > wl_early + 0.08  # injected drift should be clearly visible
+
+    temp_early = sum(p["value"] for p in temp_series[:20]) / 20
+    temp_late = sum(p["value"] for p in temp_series[-4:]) / 4
+    assert abs(temp_late - temp_early) < 2.0  # no injected drift here
+
+
 def test_dual_fault_module_shows_both_independently_injected_drifts():
     """mod-E5 injects thermal drift and power degradation independently of each other
     (unlike mod-C3/mod-D4, which each have exactly one active fault) -- both should be
