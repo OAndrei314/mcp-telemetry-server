@@ -21,9 +21,9 @@ alarm.
 ## What's implemented
 
 - `telemetry_server/telemetry_sim.py` — generates plausible-shaped synthetic telemetry
-  (temperature, bias current, optical power, wavelength) for 6 fictional modules; four of
-  them have a deliberately injected drift/degradation in their most recent readings (three
-  single-fault modules — two of them isolated to one metric each — one dual-fault module
+  (temperature, bias current, optical power, wavelength) for 7 fictional modules; five of
+  them have a deliberately injected drift/degradation in their most recent readings (four
+  single-fault modules — three of them isolated to one metric each — one dual-fault module
   with both faults injected at once).
 - `telemetry_server/anomaly.py` — a rolling z-score detector: every flagged point comes
   with the window mean/std it was compared against, so it's auditable, not a black box.
@@ -187,14 +187,50 @@ caught by the correlation layer on its own merits, not by accident. `mod-A1`/`mo
 stays at its `0.1` baseline when bias isn't rising in isolation — see
 `tests/test_correlation.py`.
 
-Next genuine step: the correlation layer's four "has a real fault" hypotheses
-(`thermal_bias_coupling`, `optical_power_degradation`, `wavelength_control_drift`, and now
-`bias_current_isolated_drift`) were each added reactively, one synthetic module at a time,
-to close a specific gap a new module exposed. There's no module yet with a genuine
-*wavelength* fault (see the still-open limitation above), so `wavelength_control_drift`
-remains validated only against noise, never against a real positive case — the next module
-worth adding is one with an actual injected `wavelength_nm` drift, to find out whether that
-hypothesis's scoring is well-calibrated or just untested.
+The correlation layer's four "has a real fault" hypotheses (`thermal_bias_coupling`,
+`optical_power_degradation`, `wavelength_control_drift`, and `bias_current_isolated_drift`)
+were each added reactively, one synthetic module at a time, to close a specific gap a new
+module exposed. `wavelength_control_drift` was the one still-open case: it had only ever
+been validated against noise (via the recalibrated `SLOPE_THRESHOLDS["wavelength_nm"]`
+above), never against a real positive.
+
+A seventh module, `mod-G7`, closes that gap: an isolated `wavelength_nm` drift with
+`temperature_c` held flat, using the same ramp function `mod-F6` applies to
+`bias_current_ma`. Measured, not assumed: the injected drift produces a slope of
+`0.02/hour`, well clear of the `0.008` threshold, and `wavelength_control_drift`'s own
+scoring formula (0.1 base + 0.45 for wavelength moving, no +0.2 co-drift bonus since
+temperature never rises) lands at exactly `0.55` — above `CORRELATED_FAULT_THRESHOLD`
+(0.5) with real margin, and it correctly ranks first among all five hypotheses.
+
+That measurement also surfaced a genuinely interesting, slightly uncomfortable finding
+about the *other* severity signal, worth reporting honestly rather than only reporting the
+clean win: at `mod-G7`'s default seeded data, `wavelength_nm` itself gets **zero**
+point-anomaly flags at the health-scoring settings (window=10, z=3.5) — the drift is real
+but too gradual to trip any single point's z-score. Meanwhile `optical_power_dbm`, a metric
+with no injected fault at all, picks up 2 flagged points from ordinary measurement noise (a
+manifestation of the same false-alarm rate documented above, not a new problem). The
+practical consequence: with the correlation-aware signal disabled
+(`correlated_fault_threshold=2.0`), `mod-G7` still lands on `degraded` — but for the *wrong*
+reason, flagging the unrelated `optical_power_dbm` false alarm while missing the real
+`wavelength_nm` fault entirely. The old point-counting-only design would have gotten the
+severity *level* right by pure accident while being wrong about *where* the problem is.
+With the correlation layer active — and confirmed to hold even with `min_persistent_points`
+set high enough to silence every point-anomaly flag, including the `optical_power_dbm` false
+alarm `mod-G7` doesn't depend on — `correlated_faults` correctly names
+`wavelength_control_drift` as the real cause. Pinned by
+`test_isolated_wavelength_drift_correctly_attributed_even_without_point_flags` and
+`test_isolated_wavelength_drift_point_counting_alone_would_misattribute_the_cause` in
+`tests/test_health.py`.
+
+Every fault hypothesis in the correlation layer now has at least one synthetic module
+validating it against a real positive case, not just noise. What's still genuinely
+untested: `wavelength_control_drift`'s "+0.2 if wavelength movement coincides with a
+temperature rise" bonus (correlation.py's `wavelength_score`) has never fired on real fault
+data — no module combines a genuine temperature rise with a genuine wavelength drift at the
+same time, so that specific bonus term is unvalidated. The next module worth adding is one
+that does, to find out whether the combined score is still well-separated from the
+single-fault case or double-counts evidence the two underlying hypotheses already partly
+share.
 
 ## License
 

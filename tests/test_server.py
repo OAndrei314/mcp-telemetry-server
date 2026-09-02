@@ -81,6 +81,17 @@ def test_get_module_health_summary_tool_call_does_not_misattribute_isolated_bias
     assert "thermal_bias_coupling" not in summary["correlated_faults"]
 
 
+def test_explain_module_health_tool_call_surfaces_isolated_wavelength_drift():
+    """mod-G7 is the first module with a genuine wavelength_nm fault (see test_health.py
+    and test_correlation.py) -- confirm the full MCP tool-call path surfaces it as the top
+    hypothesis and a correlated fault, not just the plain Python functions."""
+    result = asyncio.run(app.call_tool("explain_module_health", {"module_id": "mod-G7"}))
+    explanation = _tool_result_payload(result)
+
+    assert explanation["fault_hypotheses"][0]["label"] == "wavelength_control_drift"
+    assert explanation["summary"]["correlated_faults"] == ["wavelength_control_drift"]
+
+
 def test_detect_anomalies_tool_call_accepts_window_and_z_thresh_overrides():
     """These were previously fixed inside the tool wrapper -- confirm they're now real,
     caller-facing MCP tool parameters that actually change the result, through the
