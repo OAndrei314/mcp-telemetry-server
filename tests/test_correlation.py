@@ -122,6 +122,43 @@ def test_isolated_wavelength_drift_ranks_wavelength_control_drift_first():
     assert "wavelength trend is moving" in hypotheses[0]["evidence"][0]
 
 
+def test_coupled_temperature_wavelength_drift_scores_above_the_isolated_case():
+    """mod-H8 closes the last gap the README flagged: wavelength_score's "+0.2 if wavelength
+    movement coincides with a temperature rise" bonus had never fired on real fault data
+    before (mod-G7's isolated wavelength drift deliberately holds temperature flat). Measured,
+    not assumed: with the bonus applied (0.1 base + 0.45 wavelength moving + 0.2 co-drift),
+    wavelength_control_drift lands at exactly 0.75 -- clearly above mod-G7's isolated-case
+    0.55, i.e. the bonus term is well-separated from the single-fault case, not a rounding
+    artifact."""
+    trends = metric_trends("mod-H8")
+    hypotheses = rank_fault_hypotheses("mod-H8")
+    by_label = {h["label"]: h["confidence"] for h in hypotheses}
+
+    assert trends["temperature_c"]["direction"] == "rising"
+    assert trends["wavelength_nm"]["direction"] == "rising"
+    assert trends["bias_current_ma"]["direction"] == "flat"
+    assert by_label["wavelength_control_drift"] == 0.75
+    assert hypotheses[0]["label"] == "wavelength_control_drift"
+    assert "coincides with temperature rise" in hypotheses[0]["evidence"][1]
+
+
+def test_coupled_temperature_wavelength_drift_does_not_also_trip_thermal_bias_coupling():
+    """The other half of the question the README posed: does the co-drift bonus
+    double-count evidence the two hypotheses already partly share? thermal_bias_coupling
+    only requires temp_rising (+0.35) here, since bias_current_ma never moves on mod-H8 --
+    it lands at exactly 0.45, a genuine near-miss just under CORRELATED_FAULT_THRESHOLD
+    (0.5), driven entirely by temperature evidence that wavelength_control_drift's bonus
+    also consumes. It stays below the threshold on this data, so mod-H8 correctly produces
+    one correlated fault, not two -- but the margin is thin (0.05), not comfortably clear,
+    worth flagging honestly rather than treating the threshold as bulletproof."""
+    hypotheses = rank_fault_hypotheses("mod-H8")
+    by_label = {h["label"]: h["confidence"] for h in hypotheses}
+
+    assert by_label["thermal_bias_coupling"] == 0.45
+    assert by_label["thermal_bias_coupling"] < 0.5
+    assert by_label["wavelength_control_drift"] > by_label["thermal_bias_coupling"]
+
+
 def test_dual_fault_module_produces_two_genuinely_high_scoring_hypotheses():
     """mod-C3 and mod-D4 each have exactly one active fault, so the *other* hypothesis
     never rises much above its 0.1 baseline in the other tests above -- the ranking has

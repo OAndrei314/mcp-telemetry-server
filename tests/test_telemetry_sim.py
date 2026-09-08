@@ -88,3 +88,27 @@ def test_dual_fault_module_shows_both_independently_injected_drifts():
     power_early = sum(p["value"] for p in power_series[:20]) / 20
     power_late = sum(p["value"] for p in power_series[-4:]) / 4
     assert power_late < power_early - 1.0
+
+
+def test_wavelength_thermal_coupled_drift_module_shows_both_drifts_together():
+    """mod-H8 injects temperature_c and wavelength_nm drift together (independently, same
+    ramp shape mod-C3 uses for temperature/bias) -- the first module where
+    wavelength_control_drift's "coincides with temperature rise" bonus (see README "Status /
+    next steps") has real fault data to fire against instead of only ever seeing a flat
+    temperature_c. bias_current_ma must stay untouched so this isn't mistaken for mod-C3's
+    thermal/bias coupling."""
+    temp_series = generate_telemetry("mod-H8", "temperature_c", hours=24)
+    wavelength_series = generate_telemetry("mod-H8", "wavelength_nm", hours=24)
+    bias_series = generate_telemetry("mod-H8", "bias_current_ma", hours=24)
+
+    temp_early = sum(p["value"] for p in temp_series[:20]) / 20
+    temp_late = sum(p["value"] for p in temp_series[-4:]) / 4
+    assert temp_late > temp_early + 2.0
+
+    wl_early = sum(p["value"] for p in wavelength_series[:20]) / 20
+    wl_late = sum(p["value"] for p in wavelength_series[-4:]) / 4
+    assert wl_late > wl_early + 0.08
+
+    bias_early = sum(p["value"] for p in bias_series[:20]) / 20
+    bias_late = sum(p["value"] for p in bias_series[-4:]) / 4
+    assert abs(bias_late - bias_early) < 2.0  # no injected drift here

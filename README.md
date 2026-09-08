@@ -223,14 +223,37 @@ alarm `mod-G7` doesn't depend on — `correlated_faults` correctly names
 `tests/test_health.py`.
 
 Every fault hypothesis in the correlation layer now has at least one synthetic module
-validating it against a real positive case, not just noise. What's still genuinely
-untested: `wavelength_control_drift`'s "+0.2 if wavelength movement coincides with a
-temperature rise" bonus (correlation.py's `wavelength_score`) has never fired on real fault
-data — no module combines a genuine temperature rise with a genuine wavelength drift at the
-same time, so that specific bonus term is unvalidated. The next module worth adding is one
-that does, to find out whether the combined score is still well-separated from the
-single-fault case or double-counts evidence the two underlying hypotheses already partly
-share.
+validating it against a real positive case, not just noise. The last gap called out here was
+`wavelength_control_drift`'s "+0.2 if wavelength movement coincides with a temperature rise"
+bonus (correlation.py's `wavelength_score`), which had never fired on real fault data.
+
+An eighth module, `mod-H8`, closes it: temperature_c and wavelength_nm rising together
+(independently injected, the same ramp shape mod-C3 already uses for temperature/bias),
+bias_current_ma held flat. Measured, not assumed: with the bonus applied,
+`wavelength_control_drift` lands at exactly `0.75` (0.1 base + 0.45 wavelength moving + 0.2
+co-drift) — clearly separated from mod-G7's isolated-case `0.55`, so the bonus term is doing
+real, well-separated work rather than being lost in noise.
+
+The double-counting half of the question has a more interesting answer, worth reporting
+honestly rather than only reporting the clean separation above: `thermal_bias_coupling` also
+picks up evidence from the same rising temperature (0.1 base + 0.35 for temp_rising, no
+further +0.3/+0.2 since bias current never moves) and lands at `0.45` — a genuine near-miss
+just `0.05` under `CORRELATED_FAULT_THRESHOLD` (0.5), driven entirely by evidence
+`wavelength_control_drift`'s bonus term also consumes. On this seeded data the two hypotheses
+stay cleanly separated (`0.75` vs `0.45`) and `correlated_faults` correctly names only
+`wavelength_control_drift`, confirmed by
+`test_coupled_temperature_wavelength_drift_correctly_names_one_correlated_fault` in
+`tests/test_health.py`. But the margin is thin, not structurally guaranteed: lowering
+`correlated_fault_threshold` from 0.5 to 0.44 — a very small change — flips
+`thermal_bias_coupling` into `correlated_faults` too, reported as a real fault alongside
+`wavelength_control_drift` even though `mod-H8` never injects a bias-current fault at all —
+pinned by `test_coupled_temperature_wavelength_drift_near_miss_is_a_real_boundary`. In other
+words: the two hypotheses don't currently double-count enough to both cross the line, but
+they share enough evidence that a small threshold change, or a noisier temperature
+trajectory, plausibly could make them. That's a real, measured limitation of scoring
+hypotheses independently off overlapping evidence rather than jointly, not a bug to silently
+paper over — the alternative (an explicit temperature-evidence budget shared across
+hypotheses) would add real complexity for a case that, today, resolves correctly.
 
 ## License
 

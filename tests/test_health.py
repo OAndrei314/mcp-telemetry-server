@@ -185,6 +185,30 @@ def test_isolated_wavelength_drift_point_counting_alone_would_misattribute_the_c
     assert desensitized["metrics"]["wavelength_nm"]["flagged"] is False
 
 
+def test_coupled_temperature_wavelength_drift_correctly_names_one_correlated_fault():
+    """mod-H8 has a real, coupled temperature/wavelength fault (see test_correlation.py's
+    test_coupled_temperature_wavelength_drift_scores_above_the_isolated_case:
+    wavelength_control_drift scores 0.75, well above mod-G7's isolated-case 0.55) alongside
+    a genuine near-miss on thermal_bias_coupling (0.45, driven by the same temperature
+    evidence, but correctly staying below the 0.5 threshold since bias_current_ma never
+    moves). correlated_faults must name only the real fault, not both hypotheses just
+    because they partly share evidence."""
+    summary = summarize_module_health("mod-H8")
+    assert summary["status"] == "critical"
+    assert summary["correlated_faults"] == ["wavelength_control_drift"]
+
+
+def test_coupled_temperature_wavelength_drift_near_miss_is_a_real_boundary():
+    """0.45 is a real boundary for thermal_bias_coupling on mod-H8, not a coincidence:
+    lowering correlated_fault_threshold just below it flips thermal_bias_coupling into
+    correlated_faults too, even though mod-H8 never injects a bias-current fault -- the
+    honest edge case test_coupled_temperature_wavelength_drift_does_not_also_trip_thermal_bias_coupling
+    flags as a thin, not bulletproof, margin."""
+    sensitive = summarize_module_health("mod-H8", correlated_fault_threshold=0.44)
+    assert "thermal_bias_coupling" in sensitive["correlated_faults"]
+    assert "wavelength_control_drift" in sensitive["correlated_faults"]
+
+
 def test_fault_free_modules_have_no_correlated_faults():
     """The correlation-aware severity signal must not itself become a new source of false
     positives on modules with no injected fault."""
