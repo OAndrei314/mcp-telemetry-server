@@ -20,6 +20,11 @@ most recent readings so the anomaly detector in `anomaly.py` and the correlation
   with a genuine injected wavelength fault (see README "Status / next steps"). Every other
   module leaves wavelength_nm as pure noise, so `wavelength_control_drift` (correlation.py)
   had only ever been checked against known-good data. This gives it a known-bad case too.
+- mod-H8: temperature_c *and* wavelength_nm rising together (independently injected, same
+  ramp shape as mod-C3's temperature/bias pairing) -- the first module where
+  `wavelength_control_drift`'s "+0.2 if wavelength movement coincides with a temperature
+  rise" bonus (correlation.py's `wavelength_score`) can actually fire against real fault
+  data instead of only ever scoring 0.1/0.55 on modules where temperature stays flat.
 """
 from __future__ import annotations
 
@@ -39,6 +44,10 @@ MODULE_PROFILES = {
     },
     "mod-F6": {"anomaly": "bias_only_drift", "metrics": ["bias_current_ma"]},
     "mod-G7": {"anomaly": "wavelength_only_drift", "metrics": ["wavelength_nm"]},
+    "mod-H8": {
+        "anomaly": "wavelength_thermal_coupled_drift",
+        "metrics": ["temperature_c", "wavelength_nm"],
+    },
 }
 
 _BASELINE = {
@@ -92,6 +101,13 @@ def generate_telemetry(
             values[in_window] += ramp_progress * (6.0 * std)  # dropping
         elif profile["anomaly"] == "wavelength_only_drift" and metric == "wavelength_nm":
             values[in_window] += ramp_progress * (6.0 * std)  # locker drifting off-channel
+        elif profile["anomaly"] == "wavelength_thermal_coupled_drift" and metric in (
+            "temperature_c",
+            "wavelength_nm",
+        ):
+            # Both ramps injected independently (same shape as thermal_drift's
+            # temperature/bias pairing above), not one derived from the other.
+            values[in_window] += ramp_progress * (6.0 * std)  # rising together
 
     return [
         {"hours_ago": round(float(h), 3), "value": round(float(v), 4)}
